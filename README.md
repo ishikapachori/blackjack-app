@@ -33,16 +33,12 @@ A sleek and simple web-based Blackjack (21) game where you can play, bet, and ge
 1. Groq LLaMA-3 API Key
 Sign up or log in at the Groq Console:
 https://console.groq.com
-
 Create a new API key and copy it.
-
 In the project root, open config.py and set:
-
-# config.py
 GROQ_API_KEY = "your_groq_api_key_here"
+
 2. Deck of Cards API
 No key required—this project uses the public Deck of Cards API.
-
 Documentation and endpoints: https://deckofcardsapi.com/
 
 
