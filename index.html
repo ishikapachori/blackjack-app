@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>blackjack 21</title>
+  <style>
+    body {
+      font-family: "Arial Narrow", sans-serif;
+      background-color: black;
+      color: red;
+      text-align: center;
+      padding: 20px;
+      text-transform: lowercase;
+    }
+
+    .cards {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    input[type="number"] {
+      background-color: transparent;
+      color: white;
+      border: 1px solid red;
+      padding: 6px;
+      font-family: "Arial Narrow", sans-serif;
+      text-transform: lowercase;
+    }
+
+    button {
+      background-color: transparent;
+      color: white;
+      border: 1px solid white;
+      padding: 10px 20px;
+      margin: 5px;
+      font-size: 16px;
+      cursor: pointer;
+      font-family: "Arial Narrow", sans-serif;
+      text-transform: lowercase;
+    }
+
+    #ai-insight-box {
+      position: fixed;
+      bottom: 80px;
+      right: 20px;
+      width: 300px;
+      max-height: 300px;
+      background: black;
+      border: 1px solid red;
+      border-radius: 0;
+      display: none;
+      flex-direction: column;
+      box-shadow: 0 0 10px rgba(255, 0, 0, 0.4);
+      overflow-y: auto;
+      z-index: 9999;
+      padding: 10px;
+      color: white;
+      text-align: left;
+      font-size: 14px;
+      font-family: "Arial Narrow", sans-serif;
+      text-transform: lowercase;
+    }
+
+    #ai-insight-button {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      padding: 10px 15px;
+      background-color: red;
+      color: black;
+      border: none;
+      border-radius: 0;
+      font-size: 14px;
+      z-index: 99999;
+      cursor: pointer;
+      font-family: "Arial Narrow", sans-serif;
+      text-transform: lowercase;
+    }
+
+    #result {
+      margin-top: 20px;
+      font-size: 24px;
+      font-weight: bold;
+      text-transform: lowercase;
+    }
+  </style>
+</head>
+<body>
+  <h1>blackjack</h1>
+
+  <div id="balance">balance: <span id="coins">1000</span></div>
+
+  <div>
+    <label>bet: <input type="number" id="bet" value="100" min="1" /></label>
+  </div>
+
+  <h2>dealer cards (<span id="dealer-score">total: 0</span>)</h2>
+  <div class="cards" id="dealer-cards"></div>
+
+  <h2>your cards (<span id="player-score">total: 0</span>)</h2>
+  <div class="cards" id="player-cards"></div>
+
+  <div id="buttons">
+    <button id="start-btn" onclick="startGame()">start game</button>
+    <button id="hit-btn" onclick="hit()" style="display:none;">hit</button>
+    <button id="stand-btn" onclick="stand()" style="display:none;">stand</button>
+    <button id="new-hand-btn" onclick="startGame()" style="display:none;">new hand</button>
+    <button onclick="resetGame()">reset game</button>
+  </div>
+
+  <div id="result"></div>
+
+  <div id="ai-insight-box">
+    <div id="insights-content">hi gambler</div>
+  </div>
+  <button id="ai-insight-button" onclick="toggleInsights()">ai insights</button>
+
+  <script>
+    let deckId = '';
+    let playerHand = [];
+    let dealerHand = [];
+    let balance = parseInt(localStorage.getItem('balance')) || 1000;
+    let gameHistory = [];
+    let gameInProgress = false;
+
+    const coinsDisplay = document.getElementById('coins');
+    const resultDiv = document.getElementById('result');
+    const dealerScoreSpan = document.getElementById('dealer-score');
+    const playerScoreSpan = document.getElementById('player-score');
+
+    coinsDisplay.innerText = balance;
+
+    async function startGame() {
+      const bet = parseInt(document.getElementById('bet').value);
+      if (bet > balance || bet <= 0) {
+        alert("invalid bet amount!");
+        return;
+      }
+
+      gameInProgress = true;
+      document.getElementById('insights-content').innerText = 'hi gambler';
+
+      document.getElementById('start-btn').style.display = 'none';
+      document.getElementById('hit-btn').style.display = 'inline-block';
+      document.getElementById('stand-btn').style.display = 'inline-block';
+      document.getElementById('new-hand-btn').style.display = 'none';
+
+      const res = await fetch("https://deckofcardsapi.com/api/deck/new/draw/?count=4");
+      const data = await res.json();
+      deckId = data.deck_id;
+
+      playerHand = [data.cards[0], data.cards[2]];
+      dealerHand = [data.cards[1], data.cards[3]];
+
+      renderHand('player-cards', playerHand);
+      renderHand('dealer-cards', [dealerHand[0], { image: 'https://deckofcardsapi.com/static/img/back.png' }]);
+
+      updateScores(true);
+      resultDiv.innerText = "";
+    }
+
+    function renderHand(containerId, hand) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = '';
+      hand.forEach(card => {
+        const img = document.createElement('img');
+        img.src = card.image;
+        img.style.height = '100px';
+        container.appendChild(img);
+      });
+    }
+
+    async function drawCard(hand, containerId) {
+      const res = await fetch(`https://deckofcardsapi.com/api/deck/${deckId}/draw/?count=1`);
+      const data = await res.json();
+      hand.push(...data.cards);
+      renderHand(containerId, hand);
+      updateScores(true);
+    }
+
+    function calculateScore(hand) {
+      let score = 0;
+      let aces = 0;
+      for (let card of hand) {
+        if (['KING', 'QUEEN', 'JACK'].includes(card.value)) {
+          score += 10;
+        } else if (card.value === 'ACE') {
+          aces += 1;
+          score += 11;
+        } else {
+          score += parseInt(card.value);
+        }
+      }
+      while (score > 21 && aces > 0) {
+        score -= 10;
+        aces -= 1;
+      }
+      return score;
+    }
+
+    async function hit() {
+      await drawCard(playerHand, 'player-cards');
+      const score = calculateScore(playerHand);
+      if (score > 21) {
+        balance -= parseInt(document.getElementById('bet').value);
+        endGame("bust! you lose.");
+      }
+    }
+
+    async function stand() {
+      renderHand('dealer-cards', dealerHand);
+
+      let dealerScore = calculateScore(dealerHand);
+      while (dealerScore < 17) {
+        await drawCard(dealerHand, 'dealer-cards');
+        dealerScore = calculateScore(dealerHand);
+      }
+
+      const playerScore = calculateScore(playerHand);
+      const bet = parseInt(document.getElementById('bet').value);
+      let result = "";
+      if (dealerScore > 21 || playerScore > dealerScore) {
+        balance += bet;
+        result = "you win!";
+      } else if (playerScore < dealerScore) {
+        balance -= bet;
+        result = "you lose!";
+      } else {
+        result = "it's a tie!";
+      }
+
+      endGame(result);
+    }
+
+    function updateScores(hideDealer = false) {
+      dealerScoreSpan.innerText = "total: " + (hideDealer ? calculateScore(dealerHand.slice(0, 1)) : calculateScore(dealerHand));
+      playerScoreSpan.innerText = "total: " + calculateScore(playerHand);
+    }
+
+    function endGame(message) {
+      gameInProgress = false;
+      document.getElementById('coins').innerText = balance;
+      localStorage.setItem('balance', balance);
+      resultDiv.innerText = message;
+
+      document.getElementById('hit-btn').style.display = 'none';
+      document.getElementById('stand-btn').style.display = 'none';
+      document.getElementById('new-hand-btn').style.display = 'inline-block';
+
+      updateScores(false);
+      recordGame(message);
+      fetchInsights();
+    }
+
+    function resetGame() {
+      localStorage.setItem('balance', 1000);
+      balance = 1000;
+      coinsDisplay.innerText = balance;
+      playerHand = [];
+      dealerHand = [];
+      document.getElementById('player-cards').innerHTML = '';
+      document.getElementById('dealer-cards').innerHTML = '';
+      resultDiv.innerText = '';
+      playerScoreSpan.innerText = 'total: 0';
+      dealerScoreSpan.innerText = 'total: 0';
+      document.getElementById('hit-btn').style.display = 'none';
+      document.getElementById('stand-btn').style.display = 'none';
+      document.getElementById('start-btn').style.display = 'inline-block';
+      document.getElementById('new-hand-btn').style.display = 'none';
+      gameInProgress = false;
+    }
+
+    function toggleInsights() {
+      const box = document.getElementById('ai-insight-box');
+      box.style.display = box.style.display === 'none' ? 'flex' : 'none';
+    }
+
+    function recordGame(result) {
+      gameHistory.push({
+        player: playerHand.map(c => c.code).join(','),
+        dealer: dealerHand.map(c => c.code).join(','),
+        result
+      });
+    }
+
+    async function fetchInsights() {
+      if (gameInProgress) {
+        document.getElementById('insights-content').innerText = 'hi gambler';
+        return;
+      }
+
+      try {
+        const res = await fetch('/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ history: gameHistory })
+        });
+        const data = await res.json();
+        document.getElementById('insights-content').innerText = data.insights || 'hi gambler';
+      } catch (err) {
+        document.getElementById('insights-content').innerText = 'hi gambler';
+      }
+    }
+  </script>
+</body>
+  <footer style="margin-top: 40px; color: red; font-family: 'Arial Narrow'; text-transform: lowercase;">
+    made by ishika <3
+  </footer>
+</body>
+</html>
+
+</html>
